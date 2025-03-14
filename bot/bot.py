@@ -5,7 +5,7 @@ import re
 from signal import signal, SIGINT, SIGTERM, SIGABRT
 from threading import Thread, Lock
 from time import sleep
-import types
+from bot import custom_types
 import json
 
 import requests
@@ -27,7 +27,7 @@ from .handler import EventType, DefaultHandler, \
     Filter, StopDispatching
 from .util import signal_name_by_code
 from .myteam import add_chat_members, create_chat
-from .types import InlineKeyboardMarkup, Format
+from .custom_types import InlineKeyboardMarkup, Format
 from .constant import ParseMode
 
 

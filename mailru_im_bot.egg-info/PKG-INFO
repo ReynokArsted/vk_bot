@@ -1,0 +1,78 @@
+Metadata-Version: 2.2
+Name: mailru-im-bot
+Version: 0.0.22
+Summary: Pure Python interface for Bot API. Bot cookbook for Humans.
+Home-page: https://github.com/mail-ru-im/bot-python
+Author: ICQ LLC (Mail.Ru Group)
+Author-email: support@icq.com
+License: MIT
+Keywords: mailru im bot api
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Communications :: Chat
+Classifier: Topic :: Internet
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Operating System :: OS Independent
+Requires-Python: >= 2.7, != 3.0.*, != 3.1.*, != 3.2.*, != 3.3.*
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: cached-property==1.5.2
+Requires-Dist: enum34==1.1.6; python_version < "3.4"
+Requires-Dist: expiringdict==1.2.1
+Requires-Dist: monotonic==1.6
+Requires-Dist: python-baseconv==1.2.2
+Requires-Dist: requests==2.31.0
+Requires-Dist: six==1.16.0
+Requires-Dist: gTTS==2.2.3
+Requires-Dist: urllib3==1.26.18
+Requires-Dist: click>=8.0.3
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+<img src="logo_bot.png" width="100" height="100">
+
+# VK Teams Bot API for Python
+[![Python package](https://github.com/mail-ru-im/bot-python/actions/workflows/python-package.yml/badge.svg)](https://github.com/mail-ru-im/bot-python/actions/workflows/python-package.yml)
+[![codecov](https://codecov.io/github/mail-ru-im/bot-python/graph/badge.svg?token=ObUFRWSyGv)](https://codecov.io/github/mail-ru-im/bot-python)
+[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat)](https://pkg.go.dev/github.com/mail-ru-im/bot-golang)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
+### [<img src="logo_msg.png" width="16"> VK Teams API Specification](https://teams.vk.com/botapi/)
+
+## Getting started
+
+* Create your own bot by sending the _/newbot_ command to _Metabot_ and follow the instructions.
+    >Note: a bot can only reply after the user has added it to his contact list, or if the user was the first to start a dialogue.
+* You can configure the domain that hosts your VK Teams server. When instantiating the Bot class, add the address of your domain.
+* An example of how to use the framework can be seen in _example/test_bot.py_
+
+## Installing
+Install using pip:
+```bash
+pip install --upgrade mailru-im-bot
+```
+
+Install from sources:
+```bash
+git clone https://github.com/mail-ru-im/bot-python.git
+cd bot-python
+python setup.py install
+```
