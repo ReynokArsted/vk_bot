@@ -2,7 +2,7 @@ import json
 from bot.bot import Bot
 from bot.handler import MessageHandler, BotButtonCommandHandler
 
-TOKEN = "001.0552989608.2853020515:1011883647"  # your token here
+TOKEN = "001.3014776720.0345725419:1011867925"  # your token here
 
 bot = Bot(token=TOKEN)
 
