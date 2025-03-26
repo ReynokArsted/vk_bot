@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid  # Добавим для генерации уникальных ID
 from typing import Any, Dict, List
 from bot.bot import Bot
 from bot.handler import MessageHandler, BotButtonCommandHandler, CommandHandler
@@ -11,8 +12,8 @@ bot = Bot(token=TOKEN)
 
 # Глобальные словари для хранения данных
 chat_members: Dict[str, Dict[str, Any]] = {}      # Информация о группах: {chat_id: {"groupId": ..., "groupName": ..., "members": [...]}}
-pending_requests: Dict[str, Dict[str, str]] = {}    # Запросы на апрув: {user_id: {"text": ..., "group": ...}}
-approval_votes: Dict[str, Dict[str, str]] = {}      # Голосования: {requester_id: {responder_id: "approved"|"rejected"}}
+pending_requests: Dict[str, Dict[str, str]] = {}    # Запросы на апрув: {request_id: {"user_id": ..., "text": ..., "group": ...}}
+approval_votes: Dict[str, Dict[str, str]] = {}      # Голосования: {request_id: {responder_id: "approved"|"rejected"}}
 
 def create_inline_keyboard(buttons_list: List[List[Dict[str, str]]]) -> str:
     """Возвращает JSON-строку для inline-кнопок."""
@@ -45,66 +46,135 @@ def handle_buttons(bot: Bot, event: Any) -> None:
     callback_data = event.data.get("callbackData", "")
     chat_id = event.from_chat
     user_id = event.data.get("from", {}).get("userId", "")
+    request_id = ""
     
     if callback_data == "update_members":
         update_members(bot, chat_id)
         return
-    
+
     if callback_data == "create_approval_request":
-        pending_requests[user_id] = {"text": "", "group": ""}
+        # Генерация уникального ID для запроса
+        request_id = str(uuid.uuid4())  
+
+        # Сохраняем новый запрос в pending_requests
+        if user_id not in pending_requests:
+            pending_requests[user_id] = {}
+
+        # Сохраняем новый запрос с уникальным request_id для данного пользователя
+        pending_requests[user_id][request_id] = {
+            "text": "", 
+            "group": "", 
+            "requester_id": user_id
+        }
+
+        # Спрашиваем описание запроса
         bot.send_text(chat_id=user_id, text="Введите описание запроса на апрув:")
         return
     
+    #if callback_data.startswith("choose_group_"):
+    #    group_id = callback_data.replace("choose_group_", "")  
+    #    if user_id in pending_requests:
+    #        request_id = str(uuid.uuid4())  # Генерация уникального ID для запроса
+    #        pending_requests[user_id]["request_id"] = request_id
+    #        pending_requests[user_id]["group"] = group_id
+    #        pending_requests[user_id]["requester_id"] = user_id  # Сохраняем создателя запроса
+    #        send_approval_request(bot, user_id, group_id, request_id)
+    #    return
+
     if callback_data.startswith("choose_group_"):
         group_id = callback_data.replace("choose_group_", "")
-        if user_id in pending_requests:
-            pending_requests[user_id]["group"] = group_id
-            send_approval_request(bot, user_id, group_id)
+    
+        # Находим последний созданный запрос для пользователя
+        if user_id in pending_requests and len(pending_requests[user_id]) > 0:
+            # Получаем последний request_id для данного пользователя
+            request_id = list(pending_requests[user_id].keys())[-1]
+        
+            # Обновляем группу для этого запроса
+            pending_requests[user_id][request_id]["group"] = group_id
+            pending_requests[user_id][request_id]["requester_id"] = user_id
+        
+            # Отправляем запрос на апрув
+            send_approval_request(bot, user_id, group_id, request_id)
         return
+
     
     # Обработка кнопок одобрения и отклонения
+    # В обработке кнопок approve и reject
     if callback_data.startswith("approve_"):
-        # Формат callbackData: "approve_<requester_id>"
-        requester_id = callback_data.split("_", 1)[1]
-        # Проверяем, если пользователь уже голосовал за этот запрос
-        if requester_id in approval_votes and user_id in approval_votes[requester_id]:
+        request_id = callback_data.split("_", 1)[1]
+
+        # Проверяем, проголосовал ли пользователь уже
+        if request_id in approval_votes and user_id in approval_votes[request_id]:
             bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
             return
-        # Записываем голос за запрос
-        approval_votes.setdefault(requester_id, {})[user_id] = "approved"
+
+        # Записываем голос
+        approval_votes.setdefault(request_id, {})[user_id] = "approved"
         bot.send_text(chat_id=event.from_chat, text="Вы одобрили запрос.")
-        bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} одобрил ваш запрос.")
+
+        # Отправляем сообщение создателю запроса
+        requester_id = None
+        for requester, requests in pending_requests.items():
+            if request_id in requests:
+                requester_id = requests[request_id].get("requester_id")
+                # Завершаем функцию, если нашли нужный запрос
+                request_text = requests[request_id].get("text", "Нет текста запроса")
+                bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} одобрил ваш запрос: {request_text}")
+                return  # Завершаем выполнение функции сразу
+
+        # Если не нашли создателя запроса
+        logging.error(f"Не удалось найти создателя запроса для request_id {request_id}")
         return
-    
+
     if callback_data.startswith("reject_"):
-        # Формат callbackData: "reject_<requester_id>"
-        requester_id = callback_data.split("_", 1)[1]
-        if requester_id in approval_votes and user_id in approval_votes[requester_id]:
+        request_id = callback_data.split("_", 1)[1]
+
+        # Проверяем, проголосовал ли пользователь уже
+        if request_id in approval_votes and user_id in approval_votes[request_id]:
             bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
             return
-        approval_votes.setdefault(requester_id, {})[user_id] = "rejected"
+
+        # Записываем голос
+        approval_votes.setdefault(request_id, {})[user_id] = "rejected"
         bot.send_text(chat_id=event.from_chat, text="Вы отклонили запрос.")
-        bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} отклонил ваш запрос.")
+
+        # Отправляем сообщение создателю запроса
+        requester_id = None
+        for requester, requests in pending_requests.items():
+            if request_id in requests:
+                requester_id = requests[request_id].get("requester_id")
+                # Завершаем функцию, если нашли нужный запрос
+                request_text = requests[request_id].get("text", "Нет текста запроса")
+                bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} отклонил ваш запрос: {request_text}")
+                return  # Завершаем выполнение функции сразу
+
+        # Если не нашли создателя запроса
+        logging.error(f"Не удалось найти создателя запроса для request_id {request_id}")
         return
 
     show_main_menu(bot, chat_id, chat_id in chat_members)
 
+
 def handle_message(bot: Bot, event: Any) -> None:
-    """
-    Обрабатывает входящие текстовые сообщения.
-    Если пользователь находится в процессе создания запроса и еще не ввёл текст – сохраняет его и предлагает выбрать группу.
-    Иначе – выводит главное меню.
-    """
+    """Обрабатывает входящие текстовые сообщения."""
     user_id = event.data.get("from", {}).get("userId", "")
     chat_id = event.from_chat
     chat_type = event.data.get("chat", {}).get("type", "")
     is_private_chat = chat_type == "private"
     
-    if user_id in pending_requests and not pending_requests[user_id]["text"]:
-        pending_requests[user_id]["text"] = event.data.get("text", "")
+    # Проверяем, если пользователь в процессе создания запроса
+    if user_id in pending_requests and len(pending_requests[user_id]) > 0:
+        # Если у пользователя несколько запросов, берём последний созданный запрос
+        request_id = list(pending_requests[user_id].keys())[-1]
+
+        # Сохраняем текст запроса
+        pending_requests[user_id][request_id]["text"] = event.data.get("text", "")
+        
+        # После этого предлагаем выбрать группу
         show_available_groups(bot, user_id)
     else:
         show_main_menu(bot, chat_id, is_private_chat)
+
 
 def update_members(bot: Bot, chat_id: str) -> None:
     """
@@ -146,12 +216,17 @@ def show_available_groups(bot: Bot, user_id: str) -> None:
     ]
     bot.send_text(chat_id=user_id, text="Выберите группу для отправки запроса:", inline_keyboard_markup=create_inline_keyboard(buttons))
 
-def send_approval_request(bot: Bot, user_id: str, group_id: str) -> None:
+def send_approval_request(bot: Bot, user_id: str, group_id: str, request_id: str) -> None:
     """
     Отправляет запрос на апрув всем участникам выбранной группы, кроме создателя запроса.
     В сообщении добавляются кнопки для одобрения и отклонения запроса.
     """
-    request_text = pending_requests.get(user_id, {}).get("text", "")
+    print(pending_requests)
+    
+    # Получаем данные запроса по request_id
+    request_data = pending_requests.get(user_id, {}).get(request_id, {})
+    request_text = request_data.get("text", "")
+    
     if not request_text:
         return
     
@@ -159,20 +234,27 @@ def send_approval_request(bot: Bot, user_id: str, group_id: str) -> None:
     members = group_info.get("members", [])
     title = group_info.get("groupName", "...")
     
-    # Формируем inline-клавиатуру для ответа на запрос:
+    # Сохраняем ID создателя запроса, если еще не сохранён
+    if "requester_id" not in request_data:
+        pending_requests[request_id]["requester_id"] = user_id
+    
+    # Формируем inline-клавиатуру для ответа на запрос
     response_buttons = create_inline_keyboard([
-        [{"text": "✅ Одобрить", "callbackData": f"approve_{user_id}"}],
-        [{"text": "❌ Отклонить", "callbackData": f"reject_{user_id}"}]
+        [{"text": "✅ Одобрить", "callbackData": f"approve_{request_id}"}],
+        [{"text": "❌ Отклонить", "callbackData": f"reject_{request_id}"}]
     ])
     
+    # Отправляем запрос всем участникам, кроме создателя
     for member in members:
         if member != user_id:
             bot.send_text(chat_id=member, 
                 text=f"Запрос на апрув от {user_id} из группы '{title}':\n{request_text}",
                 inline_keyboard_markup=response_buttons)
     
+    # Сообщаем создателю запроса, что запрос отправлен
     bot.send_text(chat_id=user_id, text="Запрос отправлен!")
-    del pending_requests[user_id]
+    # Если нужно удалить запрос, можно раскомментировать следующую
+
 
 # Регистрация обработчиков
 bot.dispatcher.add_handler(MessageHandler(callback=handle_message))
