@@ -1,6 +1,9 @@
 import json
 import logging
-import uuid  # Добавим для генерации уникальных ID
+import uuid
+import datetime
+import threading
+import time
 from typing import Any, Dict, List
 from bot.bot import Bot
 from bot.handler import MessageHandler, BotButtonCommandHandler, CommandHandler
@@ -10,177 +13,233 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 TOKEN = "001.3014776720.0345725419:1011867925"
 bot = Bot(token=TOKEN)
 
-# Глобальные словари для хранения данных
-chat_members: Dict[str, Dict[str, Any]] = {}      # Информация о группах: {chat_id: {"groupId": ..., "groupName": ..., "members": [...]}}
-pending_requests: Dict[str, Dict[str, str]] = {}    # Запросы на апрув: {request_id: {"user_id": ..., "text": ..., "group": ...}}
-approval_votes: Dict[str, Dict[str, str]] = {}      # Голосования: {request_id: {responder_id: "approved"|"rejected"}}
+# pending_requests хранит запросы по ключу user_id, где значение — словарь с request_id как ключами.
+# Структура: { user_id: { request_id: { "text": ..., "group": ..., "requester_id": ..., "expiry": ... } } }
+pending_requests: Dict[str, Dict[str, Any]] = {}
+# Голосования: { request_id: { responder_id: "approved"|"rejected" } }
+approval_votes: Dict[str, Dict[str, str]] = {}
+# Информация о группах: { chat_id: { "groupId": ..., "groupName": ..., "members": [...] } }
+chat_members: Dict[str, Dict[str, Any]] = {}
 
 def create_inline_keyboard(buttons_list: List[List[Dict[str, str]]]) -> str:
-    """Возвращает JSON-строку для inline-кнопок."""
     return json.dumps(buttons_list)
 
+def parse_expiry_time(input_text: str) -> datetime.datetime:
+    """
+    Разбирает ввод пользователя для определения времени окончания голосования.
+    Допустимые форматы:
+        • "N мин" — через N минут
+        • "HH:MM" — сегодня в указанное время (если время уже прошло, то на следующий день)
+        • "DD.MM HH:MM" — указанная дата и время (текущий год)
+        • "DD.MM.YYYY HH:MM" — полная дата и время
+    """
+    now = datetime.datetime.now()
+    try:
+        if "мин" in input_text:
+            minutes = int(input_text.split()[0])
+            return now + datetime.timedelta(minutes=minutes)
+        elif ":" in input_text and len(input_text.split()) == 1:
+            hour, minute = map(int, input_text.split(":"))
+            expiry_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            return expiry_time if expiry_time > now else expiry_time + datetime.timedelta(days=1)
+        elif len(input_text.split()) == 2:
+            date_part, time_part = input_text.split()
+            day, month = map(int, date_part.split("."))
+            hour, minute = map(int, time_part.split(":"))
+            year = now.year
+            expiry_time = datetime.datetime(year, month, day, hour, minute)
+            return expiry_time if expiry_time > now else expiry_time.replace(year=year + 1)
+        elif len(input_text.split(".")) == 3:
+            # Ожидаем формат: DD.MM.YYYY HH:MM
+            parts = input_text.split()
+            if len(parts) != 2:
+                return None
+            date_part, time_part = parts
+            day, month, year = map(int, date_part.split("."))
+            hour, minute = map(int, time_part.split(":"))
+            return datetime.datetime(year, month, day, hour, minute)
+    except Exception as e:
+        logging.error(f"Ошибка парсинга времени: {e}")
+    return None
+
+def start_vote_timer(user_id: str, request_id: str, deadline: float, group_id: str) -> None:
+    """
+    Ждет до истечения срока голосования и вызывает finalize_vote.
+    """
+    sleep_duration = deadline - time.time()
+    if sleep_duration > 0:
+        time.sleep(sleep_duration)
+    finalize_vote(user_id, request_id, group_id)
+
+def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
+    """
+    Подводит итоги голосования для запроса с request_id.
+    Отправляет итог создателю и уведомляет тех, кто не проголосовал.
+    Затем удаляет запрос из pending_requests и approval_votes.
+    """
+    if user_id not in pending_requests or request_id not in pending_requests[user_id]:
+        return
+    request_data = pending_requests[user_id][request_id]
+    votes = approval_votes.get(request_id, {})
+    approved_count = sum(1 for v in votes.values() if v == "approved")
+    rejected_count = sum(1 for v in votes.values() if v == "rejected")
+    summary = f"Голосование завершено! Одобрено: {approved_count}, Отклонено: {rejected_count}"
+    requester_id = request_data.get("requester_id", user_id)
+    bot.send_text(chat_id=requester_id, text=summary)
+    group_info = chat_members.get(group_id, {})
+    members = group_info.get("members", [])
+    for member in members:
+        if member not in votes and member != requester_id:
+            bot.send_text(chat_id=member, text="Голосование закончилось.")
+    del pending_requests[user_id][request_id]
+    if request_id in approval_votes:
+            if user_id in pending_requests:
+                if not pending_requests[user_id]:  # Если запросов больше нет, удаляем запись пользователя
+                    del pending_requests[user_id]
+            del approval_votes[request_id]
+
 def show_main_menu(bot: Bot, chat_id: str, is_private_chat: bool) -> None:
-    """
-    Отправляет главное меню пользователю.
-    В личном чате доступны кнопки для создания запроса и просмотра статуса,
-    в групповом – только кнопка обновления списка участников.
-    """
     if is_private_chat:
         text = "Привет! У тебя появилась идея? Давай, покажем её"
         buttons = [
             [{"text": "Создать запрос на апрув", "callbackData": "create_approval_request"}],
-            [{"text": "Посмотреть статус запросов", "callbackData": "view_requests"}]
+            [{"text": "Посмотреть статус запросов", "callbackData": "to_requests_menu"}]
         ]
     else:
         text = "Привет, чат!"
         buttons = [[{"text": "Обновить участников чата", "callbackData": "update_members"}]]
-    
     bot.send_text(chat_id=chat_id, text=text, inline_keyboard_markup=create_inline_keyboard(buttons))
 
+def show_requests_menu(bot: Bot, chat_id) -> None:
+    text = "Статус запросов"
+    buttons = [
+        #[{"text": "Список твоих запросов", "callbackData": "show_your_requests"}],
+        [{"text": "Список твоих запросов", "callbackData": "no_callback"}],
+        #[{"text": "Твои голосования", "callbackData": "show_another's_requests"}],
+        [{"text": "Твои голосования", "callbackData": "no_callback"}],
+        [{"text": "Назад в главное меню", "callbackData": "to_main_menu"}],
+    ]
+    bot.send_text(chat_id=chat_id, text=text, inline_keyboard_markup=create_inline_keyboard(buttons))
+
+def show_available_groups(bot: Bot, user_id: str) -> None:
+    available_groups = [group_info for group_info in chat_members.values() if user_id in group_info.get("members", [])]
+    if not available_groups:
+        bot.send_text(chat_id=user_id, text="Вы не состоите в группах с ботом.")
+        return
+    buttons = [
+        [{"text": group["groupName"], "callbackData": f"choose_group_{group['groupId']}"}]
+        for group in available_groups
+    ]
+    bot.send_text(chat_id=user_id, text="Выберите группу для отправки запроса:", inline_keyboard_markup=create_inline_keyboard(buttons))
+
 def handle_buttons(bot: Bot, event: Any) -> None:
-    """
-    Обрабатывает нажатия кнопок.
-    Помимо стандартных действий, обрабатывает кнопки одобрения и отклонения запроса,
-    и проверяет, если пользователь уже голосовал.
-    """
     callback_data = event.data.get("callbackData", "")
     chat_id = event.from_chat
     user_id = event.data.get("from", {}).get("userId", "")
     request_id = ""
-    
+
     if callback_data == "update_members":
         update_members(bot, chat_id)
         return
 
     if callback_data == "create_approval_request":
-        # Генерация уникального ID для запроса
-        request_id = str(uuid.uuid4())  
-
-        # Сохраняем новый запрос в pending_requests
+        request_id = str(uuid.uuid4())
         if user_id not in pending_requests:
             pending_requests[user_id] = {}
-
-        # Сохраняем новый запрос с уникальным request_id для данного пользователя
-        pending_requests[user_id][request_id] = {
-            "text": "", 
-            "group": "", 
-            "requester_id": user_id
-        }
-
-        # Спрашиваем описание запроса
+        pending_requests[user_id][request_id] = {"text": "", "group": "", "requester_id": user_id, "expiry": None}
         bot.send_text(chat_id=user_id, text="Введите описание запроса на апрув:")
         return
-    
-    #if callback_data.startswith("choose_group_"):
-    #    group_id = callback_data.replace("choose_group_", "")  
-    #    if user_id in pending_requests:
-    #        request_id = str(uuid.uuid4())  # Генерация уникального ID для запроса
-    #        pending_requests[user_id]["request_id"] = request_id
-    #        pending_requests[user_id]["group"] = group_id
-    #        pending_requests[user_id]["requester_id"] = user_id  # Сохраняем создателя запроса
-    #        send_approval_request(bot, user_id, group_id, request_id)
-    #    return
+
+    if callback_data == "to_requests_menu":
+        show_requests_menu(bot, chat_id)
+        return
+
+    if callback_data == "to_main_menu":
+        show_main_menu(bot, chat_id, True)  # Показать главное меню
+        return
 
     if callback_data.startswith("choose_group_"):
         group_id = callback_data.replace("choose_group_", "")
-    
-        # Находим последний созданный запрос для пользователя
         if user_id in pending_requests and len(pending_requests[user_id]) > 0:
-            # Получаем последний request_id для данного пользователя
             request_id = list(pending_requests[user_id].keys())[-1]
-        
-            # Обновляем группу для этого запроса
             pending_requests[user_id][request_id]["group"] = group_id
-            pending_requests[user_id][request_id]["requester_id"] = user_id
-        
-            # Отправляем запрос на апрув
-            send_approval_request(bot, user_id, group_id, request_id)
+            bot.send_text(chat_id=user_id, text="Введите время окончания голосования в одном из следующих форматов:\n"
+                "🔹 `HH:MM` – сегодня в указанное время\n"
+                "🔹 `N мин` – через N минут\n"
+                "🔹 `DD.MM HH:MM` – указанная дата и время\n"
+                "🔹 `DD.MM.YYYY HH:MM` – полная дата и время")
         return
 
-    
-    # Обработка кнопок одобрения и отклонения
-    # В обработке кнопок approve и reject
     if callback_data.startswith("approve_"):
         request_id = callback_data.split("_", 1)[1]
-
-        # Проверяем, проголосовал ли пользователь уже
         if request_id in approval_votes and user_id in approval_votes[request_id]:
             bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
             return
-
-        # Записываем голос
         approval_votes.setdefault(request_id, {})[user_id] = "approved"
         bot.send_text(chat_id=event.from_chat, text="Вы одобрили запрос.")
-
-        # Отправляем сообщение создателю запроса
-        requester_id = None
-        for requester, requests in pending_requests.items():
-            if request_id in requests:
-                requester_id = requests[request_id].get("requester_id")
-                # Завершаем функцию, если нашли нужный запрос
-                request_text = requests[request_id].get("text", "Нет текста запроса")
+        found_request = False
+        for requester, requests_dict in pending_requests.items():
+            if request_id in requests_dict:
+                requester_id = requests_dict[request_id].get("requester_id")
+                request_text = requests_dict[request_id].get("text", "Нет текста запроса")
                 bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} одобрил ваш запрос: {request_text}")
-                return  # Завершаем выполнение функции сразу
-
-        # Если не нашли создателя запроса
-        logging.error(f"Не удалось найти создателя запроса для request_id {request_id}")
+                found_request = True
+                return
+        if not found_request:
+            logging.error(f"Запрос с request_id {request_id} не найден.")
         return
 
     if callback_data.startswith("reject_"):
         request_id = callback_data.split("_", 1)[1]
-
-        # Проверяем, проголосовал ли пользователь уже
         if request_id in approval_votes and user_id in approval_votes[request_id]:
             bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
             return
-
-        # Записываем голос
         approval_votes.setdefault(request_id, {})[user_id] = "rejected"
         bot.send_text(chat_id=event.from_chat, text="Вы отклонили запрос.")
-
-        # Отправляем сообщение создателю запроса
-        requester_id = None
-        for requester, requests in pending_requests.items():
-            if request_id in requests:
-                requester_id = requests[request_id].get("requester_id")
-                # Завершаем функцию, если нашли нужный запрос
-                request_text = requests[request_id].get("text", "Нет текста запроса")
+        found_request = False
+        for requester, requests_dict in pending_requests.items():
+            if request_id in requests_dict:
+                requester_id = requests_dict[request_id].get("requester_id")
+                request_text = requests_dict[request_id].get("text", "Нет текста запроса")
                 bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} отклонил ваш запрос: {request_text}")
-                return  # Завершаем выполнение функции сразу
-
-        # Если не нашли создателя запроса
-        logging.error(f"Не удалось найти создателя запроса для request_id {request_id}")
+                found_request = True
+                return
+        if not found_request:
+            logging.error(f"Запрос с request_id {request_id} не найден.")
         return
 
+    # !!! Убрать это после разработки
+    if callback_data == "no_callback":
+        return
+    # !!!
+
+    # Показать главное меню после завершения обработки кнопок
     show_main_menu(bot, chat_id, chat_id in chat_members)
 
-
 def handle_message(bot: Bot, event: Any) -> None:
-    """Обрабатывает входящие текстовые сообщения."""
     user_id = event.data.get("from", {}).get("userId", "")
     chat_id = event.from_chat
     chat_type = event.data.get("chat", {}).get("type", "")
     is_private_chat = chat_type == "private"
-    
-    # Проверяем, если пользователь в процессе создания запроса
-    if user_id in pending_requests and len(pending_requests[user_id]) > 0:
-        # Если у пользователя несколько запросов, берём последний созданный запрос
-        request_id = list(pending_requests[user_id].keys())[-1]
 
-        # Сохраняем текст запроса
-        pending_requests[user_id][request_id]["text"] = event.data.get("text", "")
-        
-        # После этого предлагаем выбрать группу
-        show_available_groups(bot, user_id)
+    # Проверяем, что бот не находится в состоянии ожидания и может продолжить работу
+    if user_id in pending_requests and len(pending_requests[user_id]) > 0:
+        request_id = list(pending_requests[user_id].keys())[-1]
+        if pending_requests[user_id][request_id]["text"] == "":
+            pending_requests[user_id][request_id]["text"] = event.data.get("text", "")
+            show_available_groups(bot, user_id)
+        elif pending_requests[user_id][request_id]["expiry"] is None:
+            expiry_time = parse_expiry_time(event.data.get("text", ""))
+            if expiry_time:
+                pending_requests[user_id][request_id]["expiry"] = expiry_time.strftime("%Y-%m-%d %H:%M")
+                threading.Thread(target=start_vote_timer, args=(user_id, request_id, expiry_time.timestamp(), pending_requests[user_id][request_id]["group"])).start()
+                send_approval_request(bot, user_id, pending_requests[user_id][request_id]["group"], request_id)
+            else:
+                bot.send_text(chat_id=user_id, text="Неверный формат времени. Попробуйте снова.")
     else:
         show_main_menu(bot, chat_id, is_private_chat)
 
-
 def update_members(bot: Bot, chat_id: str) -> None:
-    """
-    Обновляет список участников чата.
-    Получает данные о членах и информацию о чате для формирования названия группы.
-    """
     try:
         response = bot.get_chat_members(chat_id).json()
         logging.info(f"Ответ от API (get_chat_members): {response}")
@@ -202,11 +261,7 @@ def update_members(bot: Bot, chat_id: str) -> None:
         bot.send_text(chat_id=chat_id, text="Ошибка при обновлении списка участников.")
 
 def show_available_groups(bot: Bot, user_id: str) -> None:
-    """
-    Отображает список групп, в которых состоит пользователь и где находится бот.
-    Кнопки формируются с использованием groupName для отображения и groupId для callbackData.
-    """
-    available_groups = [group_info for group_info in chat_members.values() if user_id in group_info["members"]]
+    available_groups = [group_info for group_info in chat_members.values() if user_id in group_info.get("members", [])]
     if not available_groups:
         bot.send_text(chat_id=user_id, text="Вы не состоите в группах с ботом.")
         return
@@ -217,44 +272,26 @@ def show_available_groups(bot: Bot, user_id: str) -> None:
     bot.send_text(chat_id=user_id, text="Выберите группу для отправки запроса:", inline_keyboard_markup=create_inline_keyboard(buttons))
 
 def send_approval_request(bot: Bot, user_id: str, group_id: str, request_id: str) -> None:
-    """
-    Отправляет запрос на апрув всем участникам выбранной группы, кроме создателя запроса.
-    В сообщении добавляются кнопки для одобрения и отклонения запроса.
-    """
-    print(pending_requests)
-    
-    # Получаем данные запроса по request_id
     request_data = pending_requests.get(user_id, {}).get(request_id, {})
     request_text = request_data.get("text", "")
-    
+    expiry_time = request_data.get("expiry", "")
     if not request_text:
         return
-    
     group_info = chat_members.get(group_id, {})
     members = group_info.get("members", [])
     title = group_info.get("groupName", "...")
-    
-    # Сохраняем ID создателя запроса, если еще не сохранён
-    if "requester_id" not in request_data:
-        pending_requests[request_id]["requester_id"] = user_id
-    
-    # Формируем inline-клавиатуру для ответа на запрос
     response_buttons = create_inline_keyboard([
         [{"text": "✅ Одобрить", "callbackData": f"approve_{request_id}"}],
         [{"text": "❌ Отклонить", "callbackData": f"reject_{request_id}"}]
     ])
-    
-    # Отправляем запрос всем участникам, кроме создателя
     for member in members:
         if member != user_id:
             bot.send_text(chat_id=member, 
-                text=f"Запрос на апрув от {user_id} из группы '{title}':\n{request_text}",
+                text=f"Запрос на апрув от {user_id} из группы '{title}':\n{request_text}\n⏳ Голосование до: {expiry_time}",
                 inline_keyboard_markup=response_buttons)
-    
-    # Сообщаем создателю запроса, что запрос отправлен
     bot.send_text(chat_id=user_id, text="Запрос отправлен!")
-    # Если нужно удалить запрос, можно раскомментировать следующую
 
+    show_main_menu(bot, user_id, True)
 
 # Регистрация обработчиков
 bot.dispatcher.add_handler(MessageHandler(callback=handle_message))
