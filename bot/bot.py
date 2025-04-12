@@ -5,7 +5,7 @@ import re
 from signal import signal, SIGINT, SIGTERM, SIGABRT
 from threading import Thread, Lock
 from time import sleep
-from bot import custom_types
+from bot import types
 import json
 
 import requests
@@ -27,7 +27,7 @@ from .handler import EventType, DefaultHandler, \
     Filter, StopDispatching
 from .util import signal_name_by_code
 from .myteam import add_chat_members, create_chat
-from .custom_types import InlineKeyboardMarkup, Format
+from .types import InlineKeyboardMarkup, Format
 from .constant import ParseMode
 
 
@@ -51,7 +51,7 @@ def format_to_json(format_):
 
 class Bot(object):
     def __init__(self, token: str, api_url_base: str = None, name: str = None, version: str = None,
-                 timeout_s: int = 20, poll_time_s: int = 60, is_myteam: bool = False):
+                timeout_s: int = 20, poll_time_s: int = 60, is_myteam: bool = False):
         super(Bot, self).__init__()
 
         self.log = logging.getLogger(__name__)
@@ -88,8 +88,8 @@ class Bot(object):
 
         return "{name}/{version} (uin={uin}) bot-python/{library_version}".format(
             name=self.name if self.name is not None else requests.get(url="{}/self/get".format(self.api_base_url),
-                                                                      params={"token": self.token}
-                                                                      ).json().get('nick'),
+                                                                    params={"token": self.token}
+                                                                    ).json().get('nick'),
             # name=self.name,
             version=self.version if self.version is not None else 'base',
             uin="" if self.uin is None else self.uin,
@@ -307,7 +307,7 @@ class Bot(object):
         )
 
     def send_file(self, chat_id, file_id=None, file=None, caption=None, reply_msg_id=None, forward_chat_id=None,
-                  forward_msg_id=None, inline_keyboard_markup=None, parse_mode=None, format_=None):
+                forward_msg_id=None, inline_keyboard_markup=None, parse_mode=None, format_=None):
         if parse_mode and format_:
             raise Exception("Cannot use format and parseMode fields at one time")
         if parse_mode:
