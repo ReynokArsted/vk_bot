@@ -158,14 +158,14 @@ def show_request_groups(bot: Bot, user_id: str, chat_id: str) -> None:
         if grp:
             groups[grp] = chat_members.get(grp, {}).get("groupName", grp)
     if not groups:
-        bot.send_text(chat_id=chat_id, text="У тебя пока нет активных запросов")
+        bot.send_text(chat_id=chat_id, text = "У тебя пока нет активных запросов")
         return
     buttons = [
         [{"text": group_name, "callbackData": f"view_requests_group_{group_id}"}]
         for group_id, group_name in groups.items()
     ]
     buttons.append([{"text": "Назад", "callbackData": "to_requests_menu"}])
-    bot.send_text(chat_id=chat_id, text="Выбери группу, для которой хочешь посмотреть запросы", inline_keyboard_markup=create_inline_keyboard(buttons))
+    bot.send_text(chat_id=chat_id, text = "Выбери группу, для которой хочешь посмотреть запросы", inline_keyboard_markup=create_inline_keyboard(buttons))
 
 def show_requests_for_group(bot: Bot, user_id: str, group_id: str, chat_id: str) -> None:
     user_requests = pending_requests.get(user_id, {})
@@ -209,13 +209,13 @@ def show_your_votes(bot: Bot, user_id: str, chat_id: str) -> None:
 def show_available_groups(bot: Bot, user_id: str) -> None:
     available_groups = [group_info for group_info in chat_members.values() if user_id in group_info.get("members", [])]
     if not available_groups:
-        bot.send_text(chat_id=user_id, text="Этого бота нет в группах, в которых ты состоишь")
+        bot.send_text(chat_id=user_id, text = "Этого бота нет в группах, в которых ты состоишь")
         return
     buttons = [
         [{"text": group["groupName"], "callbackData": f"choose_group_{group['groupId']}"}]
         for group in available_groups
     ]
-    bot.send_text(chat_id=user_id, text="Выбирай группу для отправки запроса", inline_keyboard_markup=create_inline_keyboard(buttons))
+    bot.send_text(chat_id=user_id, text = "Выбирай группу для отправки запроса", inline_keyboard_markup=create_inline_keyboard(buttons))
 
 def handle_buttons(bot: Bot, event: Any) -> None:
     callback_data = event.data.get("callbackData", "")
@@ -234,7 +234,7 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             "requester_id": user_id,
             "expiry": None
         }
-        bot.send_text(chat_id=user_id, text="Введите название запроса на апрув:")
+        bot.send_text(chat_id=user_id, text = "Введите название запроса на апрув:")
         return
 
     if callback_data in {"to_main_menu", "update_members", "to_requests_menu", "show_your_requests", "show_your_votes"}:
@@ -291,8 +291,8 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             if user_id in pending_requests and request_id in pending_requests[user_id]:
                 pending_requests[user_id][request_id]["group"] = group_id
                 bot.send_text(
-                    chat_id=user_id, 
-                    text="Вводи время окончания голосования в одном из следующих форматов:\n"
+                    chat_id = user_id, 
+                    text = "Вводи время окончания голосования в одном из следующих форматов:\n"
                         "🔹 HH:MM – сегодня в указанное время\n"
                         "🔹 N – через N минут\n"
                         "🔹 DD.MM HH:MM – указанная дата и время\n"
@@ -302,16 +302,16 @@ def handle_buttons(bot: Bot, event: Any) -> None:
     if callback_data.startswith("approve_"):
         request_id = callback_data.split("_", 1)[1]
         if request_id in approval_votes and user_id in approval_votes[request_id]:
-            bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
+            bot.send_text(chat_id = event.from_chat, text = "Вы уже проголосовали.")
             return
         approval_votes.setdefault(request_id, {})[user_id] = "принят"
-        bot.send_text(chat_id=event.from_chat, text="Запрос одобрен")
+        bot.send_text(chat_id = event.from_chat, text = "Запрос одобрен")
         found_request = False
         for requester, req_dict in pending_requests.items():
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
-                bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} одобрил твой запрос \"{request_name}\"")
+                bot.send_text(chat_id=requester_id, text = f"Пользователь {user_id} одобрил твой запрос \"{request_name}\"")
                 found_request = True
                 return
         if not found_request:
@@ -330,7 +330,7 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
-                bot.send_text(chat_id=requester_id, text=f"Пользователь {user_id} отклонил твой запрос \"{request_name}\"")
+                bot.send_text(chat_id=requester_id, text = f"Пользователь {user_id} отклонил твой запрос \"{request_name}\"")
                 found_request = True
                 return
         if not found_request:
@@ -350,7 +350,7 @@ def handle_message(bot: Bot, event: Any) -> None:
         req_data = pending_requests[user_id][request_id]
         if req_data["name"] == "":
             pending_requests[user_id][request_id]["name"] = event.data.get("text", "").strip()
-            bot.send_text(chat_id=user_id, text="Введите описание запроса на апрув:")
+            bot.send_text(chat_id = user_id, text = "Введите описание запроса на апрув:")
             return
         elif req_data["description"] == "":
             pending_requests[user_id][request_id]["description"] = event.data.get("text", "").strip()
@@ -368,7 +368,7 @@ def handle_message(bot: Bot, event: Any) -> None:
                 )).start()
                 send_approval_request(bot, user_id, pending_requests[user_id][request_id]["group"], request_id)
             else:
-                bot.send_text(chat_id=user_id, text="Неверный формат времени. Попробуй снова")
+                bot.send_text(chat_id=user_id, text = "Неверный формат времени. Попробуй снова")
             return
 
     show_main_menu(bot, chat_id, is_private_chat)
@@ -387,15 +387,15 @@ def update_members(bot: Bot, chat_id: str) -> None:
             "members": member_ids
         }
         logging.info(f"Обновлённый список участников для {chat_id}: {chat_members[chat_id]['members']}")
-        bot.send_text(chat_id=chat_id, text=f"Список участников обновлён: {len(member_ids)} человек.")
+        bot.send_text(chat_id = chat_id, text = f"Список участников обновлён: {len(member_ids)} человек.")
     except Exception as e:
         logging.error(f"Ошибка при обновлении списка участников: {e}")
-        bot.send_text(chat_id=chat_id, text="Ошибка при обновлении списка участников.")
+        bot.send_text(chat_id = chat_id, text = "Ошибка при обновлении списка участников.")
 
 # Регистрация обработчиков
-bot.dispatcher.add_handler(MessageHandler(callback=handle_message))
-bot.dispatcher.add_handler(BotButtonCommandHandler(callback=handle_buttons))
-bot.dispatcher.add_handler(CommandHandler(command="/update_members", callback=update_members))
+bot.dispatcher.add_handler(MessageHandler(callback = handle_message))
+bot.dispatcher.add_handler(BotButtonCommandHandler(callback = handle_buttons))
+bot.dispatcher.add_handler(CommandHandler(command = "/update_members", callback = update_members))
 
 logging.info("Бот запущен и ожидает сообщений...")
 bot.start_polling()
