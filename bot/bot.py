@@ -335,7 +335,7 @@ class Bot(object):
         return self.http_session.send(request.prepare(), timeout=self.timeout_s)
 
     def send_voice(self, chat_id, file_id=None, file=None, reply_msg_id=None, forward_chat_id=None,
-                   forward_msg_id=None, inline_keyboard_markup=None):
+                forward_msg_id=None, inline_keyboard_markup=None):
         request = Request(
             method="GET",
             url="{}/messages/sendVoice".format(self.api_base_url),
