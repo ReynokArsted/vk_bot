@@ -1,6 +1,6 @@
 from bot.bot import Bot
 from bot.handler import MessageHandler
-from bot.custom_types import Format
+from bot.types import Format
 
 import logging.config
 
