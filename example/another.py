@@ -6,34 +6,19 @@ import threading
 import time
 from typing import Any, Dict, List
 from bot.bot import Bot
-from bot.handler import MessageHandler, BotButtonCommandHandler, CommandHandler
+from bot.handler import MessageHandler, BotButtonCommandHandler, CommandHandler, NewChatMembersHandler, LeftChatMembersHandler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 TOKEN = "001.3014776720.0345725419:1011867925"
 bot = Bot(token=TOKEN)
 
-# pending_requests хранит запросы по ключу user_id, внутри которых ключами являются уникальные request_id.
-# Структура:
-# { 
-#   user_id: { 
-#       request_id: {
-#           "name": <название запроса>,
-#           "description": <описание запроса>,
-#           "group": <id группы>,
-#           "requester_id": <user_id>,
-#           "expiry": <время окончания голосования в строковом формате>
-#       }
-#   }
-# }
 pending_requests: Dict[str, Dict[str, Any]] = {}
-# Голосования: { request_id: { responder_id: "approved"|"rejected" } }
 approval_votes: Dict[str, Dict[str, str]] = {}
-# Информация о группах: { chat_id: { "groupId": <id>, "groupName": <имя>, "members": [<user_id>, ...] } }
 chat_members: Dict[str, Dict[str, Any]] = {}
-
-# Хранит текущий редактируемый запрос пользователя
 current_request: Dict[str, str] = {}
+request_images: Dict[str, str] = {}  # Новый словарь для хранения image file_id по request_id
+
 
 def create_inline_keyboard(buttons_list: List[List[Dict[str, str]]]) -> str:
     return json.dumps(buttons_list)
@@ -97,7 +82,7 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
     members = group_info.get("members", [])
     for member in members:
         if member not in votes and member != requester_id:
-            bot.send_text(chat_id=member, text="Голосование закончилось")
+            bot.send_text(chat_id=member, text="Голосование \"{request_nam}\" закончилось")
     del pending_requests[user_id][request_id]
     if request_id in approval_votes:
         del approval_votes[request_id]
@@ -392,10 +377,51 @@ def update_members(bot: Bot, chat_id: str) -> None:
         logging.error(f"Ошибка при обновлении списка участников: {e}")
         bot.send_text(chat_id = chat_id, text = "Ошибка при обновлении списка участников.")
 
+def handle_member_added(bot: Bot, event: Any) -> None:
+    """
+    Обработка события добавления пользователя в группу.
+    """
+    #group_id = event.data.get("groupId")
+    group_id = event.data.get("chat").get("chatId")
+    #group_id = event.from_chat
+    print("!!!")
+    print(event)
+    print(group_id)
+    print("!!!")
+    update_members(bot, group_id)  # Обновляем список участников для этой группы
+
+def handle_member_removed(bot: Bot, event: Any) -> None:
+    """
+    Обработка события удаления пользователя из группы.
+    """
+    group_id = event.data.get("chat").get("chatId")
+    print("!!!")
+    print(event)
+    print(group_id)
+    print("!!!")
+    update_members(bot, group_id)  # Обновляем список участников для этой группы
+
+def handle_bot_added_to_group(bot: Bot, event: Any) -> None:
+    """
+    Обработка события добавления бота в группу.
+    """
+    #group_id = event.data.get("groupId")
+    group_id = event.data.get("chat").get("chatId")
+    #group_id = event.from_chat
+    print("!!!")
+    print(event)
+    print(group_id)
+    print("!!!")
+    update_members(bot, group_id)  # Обновляем список участников для этой группы
+
+
 # Регистрация обработчиков
 bot.dispatcher.add_handler(MessageHandler(callback = handle_message))
 bot.dispatcher.add_handler(BotButtonCommandHandler(callback = handle_buttons))
 bot.dispatcher.add_handler(CommandHandler(command = "/update_members", callback = update_members))
+bot.dispatcher.add_handler(NewChatMembersHandler(callback=handle_member_added))
+bot.dispatcher.add_handler(LeftChatMembersHandler(callback=handle_member_removed))
+
 
 logging.info("Бот запущен и ожидает сообщений...")
 bot.start_polling()
