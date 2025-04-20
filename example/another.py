@@ -4,6 +4,7 @@ import uuid
 import datetime
 import threading
 import time
+import urllib.parse
 from typing import Any, Dict, List
 from bot.bot import Bot
 from bot.handler import MessageHandler, BotButtonCommandHandler, CommandHandler, NewChatMembersHandler, LeftChatMembersHandler
@@ -19,6 +20,20 @@ chat_members: Dict[str, Dict[str, Any]] = {}
 current_request: Dict[str, str] = {}
 request_images: Dict[str, str] = {}  # Новый словарь для хранения image file_id по request_id
 
+# Функции для кодировки названия групп и збежания ошибок в формата callback_data
+def encode_for_callback(group_id: str, group_name: str) -> str:
+    encoded_name = urllib.parse.quote(group_name)
+    return f"choose_group_{group_id}|{encoded_name}"
+
+def decode_from_callback(callback_data: str) -> tuple[str, str]:
+    raw = callback_data.replace("choose_group_", "")
+    if "|" in raw:
+        group_id, encoded_name = raw.split("|", 1)
+        group_name = urllib.parse.unquote(encoded_name)
+    else:
+        group_id = raw
+        group_name = ""
+    return group_id, group_name
 
 def create_inline_keyboard(buttons_list: List[List[Dict[str, str]]]) -> str:
     return json.dumps(buttons_list)
@@ -98,7 +113,7 @@ def send_approval_request(bot: Bot, user_id: str, group_id: str, request_id: str
         return
     group_info = chat_members.get(group_id, {})
     members = group_info.get("members", [])
-    title = group_info.get("groupName", "...")
+    group_name = group_info.get("groupName", "...")
     response_buttons = create_inline_keyboard([
         [{"text": "✅ Принять", "callbackData": f"approve_{request_id}"}],
         [{"text": "❌ Отклонить", "callbackData": f"reject_{request_id}"}]
@@ -107,7 +122,7 @@ def send_approval_request(bot: Bot, user_id: str, group_id: str, request_id: str
         if member != user_id:
             bot.send_text(
                 chat_id=member,
-                text=(f"Запрос \"{request_name}\" от {user_id} из группы '{title}':\n"
+                text=(f"Запрос \"{request_name}\" от {user_id} из группы \"{group_name}\":\n"
                     f"{request_text}\n⏳ Голосование до: {expiry_time}"),
                 inline_keyboard_markup=response_buttons
             )
@@ -192,15 +207,28 @@ def show_your_votes(bot: Bot, user_id: str, chat_id: str) -> None:
         bot.send_text(chat_id=chat_id, text="\n\n".join(votes_info))
 
 def show_available_groups(bot: Bot, user_id: str) -> None:
-    available_groups = [group_info for group_info in chat_members.values() if user_id in group_info.get("members", [])]
+    available_groups = [
+        group_info for group_info in chat_members.values() 
+        if user_id in group_info.get("members", [])
+    ]
+
     if not available_groups:
-        bot.send_text(chat_id=user_id, text = "Этого бота нет в группах, в которых ты состоишь")
+        bot.send_text(
+            chat_id=user_id, 
+            text = "Этого бота нет в группах, в которых ты состоишь"
+        )
         return
+
     buttons = [
-        [{"text": group["groupName"], "callbackData": f"choose_group_{group['groupId']}"}]
+        [{"text": group["groupName"], "callbackData": encode_for_callback(group["groupId"], group["groupName"])}]
         for group in available_groups
     ]
-    bot.send_text(chat_id=user_id, text = "Выбирай группу для отправки запроса", inline_keyboard_markup=create_inline_keyboard(buttons))
+
+    bot.send_text(
+        chat_id=user_id, 
+        text = "Выбирай группу для отправки запроса", 
+        inline_keyboard_markup=create_inline_keyboard(buttons)
+    )
 
 def handle_buttons(bot: Bot, event: Any) -> None:
     callback_data = event.data.get("callbackData", "")
@@ -216,10 +244,11 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             "name": "",
             "description": "",
             "group": "",
+            "group_name": "",
             "requester_id": user_id,
             "expiry": None
         }
-        bot.send_text(chat_id=user_id, text = "Введите название запроса на апрув:")
+        bot.send_text(chat_id=user_id, text = "Как назовём запрос на апрув?")
         return
 
     if callback_data in {"to_main_menu", "update_members", "to_requests_menu", "show_your_requests", "show_your_votes"}:
@@ -270,11 +299,14 @@ def handle_buttons(bot: Bot, event: Any) -> None:
         return
     
     if callback_data.startswith("choose_group_"):
-        group_id = callback_data.replace("choose_group_", "")
+        group_id, group_name = decode_from_callback(callback_data)
+
         if user_id in current_request:
             request_id = current_request[user_id]
             if user_id in pending_requests and request_id in pending_requests[user_id]:
                 pending_requests[user_id][request_id]["group"] = group_id
+                pending_requests[user_id][request_id]["group_name"] = group_name
+
                 bot.send_text(
                     chat_id = user_id, 
                     text = "Вводи время окончания голосования в одном из следующих форматов:\n"
@@ -296,7 +328,11 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
-                bot.send_text(chat_id=requester_id, text = f"Пользователь {user_id} одобрил твой запрос \"{request_name}\"")
+                group_name = req_dict[request_id].get("group_name")
+                bot.send_text(
+                    chat_id=requester_id, 
+                    text = f"Пользователь {user_id} из группы \"{group_name}\"\
+                        одобрил твой запрос \"{request_name}\"")
                 found_request = True
                 return
         if not found_request:
@@ -306,7 +342,7 @@ def handle_buttons(bot: Bot, event: Any) -> None:
     if callback_data.startswith("reject_"):
         request_id = callback_data.split("_", 1)[1]
         if request_id in approval_votes and user_id in approval_votes[request_id]:
-            bot.send_text(chat_id=event.from_chat, text="Вы уже проголосовали.")
+            bot.send_text(chat_id=event.from_chat, text="Твой голос уже засчитан")
             return
         approval_votes.setdefault(request_id, {})[user_id] = "отклонён"
         bot.send_text(chat_id=event.from_chat, text="Запрос отклонён")
@@ -315,7 +351,12 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
-                bot.send_text(chat_id=requester_id, text = f"Пользователь {user_id} отклонил твой запрос \"{request_name}\"")
+                group_name = req_dict[request_id].get("group_name", "Без названия")
+                bot.send_text(
+                    chat_id=requester_id, 
+                    text = f"Пользователь {user_id} из группы \"{group_name}\"\
+                    отклонил твой запрос \"{request_name}\""
+                )
                 found_request = True
                 return
         if not found_request:
@@ -335,7 +376,7 @@ def handle_message(bot: Bot, event: Any) -> None:
         req_data = pending_requests[user_id][request_id]
         if req_data["name"] == "":
             pending_requests[user_id][request_id]["name"] = event.data.get("text", "").strip()
-            bot.send_text(chat_id = user_id, text = "Введите описание запроса на апрув:")
+            bot.send_text(chat_id = user_id, text = "Вводи описание запроса на апрув:")
             return
         elif req_data["description"] == "":
             pending_requests[user_id][request_id]["description"] = event.data.get("text", "").strip()
@@ -353,7 +394,7 @@ def handle_message(bot: Bot, event: Any) -> None:
                 )).start()
                 send_approval_request(bot, user_id, pending_requests[user_id][request_id]["group"], request_id)
             else:
-                bot.send_text(chat_id=user_id, text = "Неверный формат времени. Попробуй снова")
+                bot.send_text(chat_id=user_id, text = "Неверный формат времени. Попробуй снова!")
             return
 
     show_main_menu(bot, chat_id, is_private_chat)
@@ -381,13 +422,7 @@ def handle_member_added(bot: Bot, event: Any) -> None:
     """
     Обработка события добавления пользователя в группу.
     """
-    #group_id = event.data.get("groupId")
     group_id = event.data.get("chat").get("chatId")
-    #group_id = event.from_chat
-    print("!!!")
-    print(event)
-    print(group_id)
-    print("!!!")
     update_members(bot, group_id)  # Обновляем список участников для этой группы
 
 def handle_member_removed(bot: Bot, event: Any) -> None:
@@ -395,23 +430,13 @@ def handle_member_removed(bot: Bot, event: Any) -> None:
     Обработка события удаления пользователя из группы.
     """
     group_id = event.data.get("chat").get("chatId")
-    print("!!!")
-    print(event)
-    print(group_id)
-    print("!!!")
     update_members(bot, group_id)  # Обновляем список участников для этой группы
 
 def handle_bot_added_to_group(bot: Bot, event: Any) -> None:
     """
     Обработка события добавления бота в группу.
     """
-    #group_id = event.data.get("groupId")
     group_id = event.data.get("chat").get("chatId")
-    #group_id = event.from_chat
-    print("!!!")
-    print(event)
-    print(group_id)
-    print("!!!")
     update_members(bot, group_id)  # Обновляем список участников для этой группы
 
 
