@@ -82,12 +82,19 @@ def start_vote_timer(user_id: str, request_id: str, deadline: float, group_id: s
     finalize_vote(user_id, request_id, group_id)
 
 def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
+    print(f"[DEBUG] finalize_vote was called!!!")
     if user_id not in pending_requests or request_id not in pending_requests[user_id]:
         return
 
     request_data = pending_requests[user_id][request_id]
-    votes = approval_votes.get(request_id, {})
+    # Проверяем, был ли уже завершён запрос
+    if request_data.get("vote_finalized", False):
+        return  # Если уже завершён, не выполняем дальнейшую логику
 
+    # Отметим, что голосование завершено
+    request_data["vote_finalized"] = True
+
+    votes = approval_votes.get(request_id, {})
     approved_users = [uid for uid, v in votes.items() if v == "approved" or v == "принят"]
     rejected_users = [uid for uid, v in votes.items() if v == "rejected" or v == "отклонён"]
 
@@ -126,7 +133,7 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
     if approved_count > rejected_count:
         result_text = "Итог - ✅ Запрос одобрен!"
     elif rejected_count > approved_count:
-        result_text = "Итог - ❌ Запрос отклонён."
+        result_text = "Итог - ❌ Запрос отклонён!"
     else:
         result_text = "Итог - 🤷 Голоса разделились и решение не принято"
 
@@ -139,19 +146,18 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
         f"{result_text}"
     )
 
-    bot.send_text(chat_id=requester_id, text=summary)
+    #bot.send_text(chat_id=requester_id, text=summary)
 
     # Проверка наличия изображения
     image_file_id = request_data.get("image")
     
+    print(f"[DEBUG] raw_members: {raw_members}")
     # Отправка сообщения с картинкой, если она есть
-    if image_file_id != None and image_file_id != "empty":
-        bot.send_file(chat_id=requester_id, file_id=image_file_id, caption=summary)
+    if image_file_id != None:
         for member in raw_members:
             bot.send_file(chat_id=member, file_id=image_file_id, caption=summary)
     else:
         # Если изображения нет, отправляем только текст
-        bot.send_text(chat_id=requester_id, text=summary)
         for member in raw_members:
             bot.send_text(chat_id=member, text=summary)    
 
@@ -205,7 +211,7 @@ def send_approval_request(bot: Bot, user_id: str, group_id: str, request_id: str
                 inline_keyboard_markup=create_inline_keyboard(buttons)
             )
 
-    bot.send_text(chat_id=user_id, text="✅ Запрос отправлен всем участникам выбранной группы.")
+    bot.send_text(chat_id=user_id, text="✅ Запрос отправлен!")
     show_main_menu(bot, user_id, True)
 
 def show_main_menu(bot: Bot, chat_id: str, is_private_chat: bool) -> None:
@@ -310,6 +316,37 @@ def show_available_groups(bot: Bot, user_id: str) -> None:
         inline_keyboard_markup=create_inline_keyboard(buttons)
     )
 
+def show_preview_request(bot: Bot, user_id: str):
+    request_id = current_request.get(user_id)
+    if not request_id:
+        return
+
+    req = pending_requests[user_id][request_id]
+    text = f"**Предпросмотр запроса**\n\n" \
+            f"📢 Новый запрос на апрув!\n\n" \
+            f"📌 Название: {req['name']}\n" \
+            f"📝 Описание: {req['description']}\n\n" \
+
+    keyboard = create_inline_keyboard([
+        [{"text": "✅ Всё верно", "callbackData": "preview_ok"}],
+        [{"text": "✏️ Изменить", "callbackData": "preview_edit"}]
+    ])
+
+    if req["image"]:  # только если реально есть картинка
+        bot.send_file(
+            chat_id=user_id, 
+            file_id=req["image"], 
+            caption=text, 
+            inline_keyboard_markup=keyboard
+        )
+    else:
+        bot.send_text(
+            chat_id=user_id, 
+            text=text, 
+            inline_keyboard_markup=keyboard
+        )
+
+
 def handle_buttons(bot: Bot, event: Any) -> None:
     callback_data = event.data.get("callbackData", "")
     chat_id = event.from_chat
@@ -318,8 +355,31 @@ def handle_buttons(bot: Bot, event: Any) -> None:
 
     if callback_data == "no_image" and user_id in pending_requests:
         request_id = list(pending_requests[user_id].keys())[-1]
-        pending_requests[user_id][request_id]["image"] = "empty"
+        pending_requests[user_id][request_id]["image"] = None
+        pending_requests[user_id][request_id]["stage"] = "group"
+        show_preview_request(bot, user_id)
+        return
+
+    
+    elif callback_data == "preview_ok":
         show_available_groups(bot, user_id)
+        return
+
+    elif callback_data == "preview_edit":
+        request_id = current_request.get(user_id)
+        if request_id:
+            req = pending_requests[user_id][request_id]
+            req.update({
+                "name": "",
+                "description": "",
+                "image": None,
+                "group": "",
+                "group_name": "",
+                "expiry": None,
+                "stage": "name",
+                "vote_finalized": False  # Флаг, указывающий, завершено ли голосование
+            })
+            bot.send_text(chat_id=user_id, text="Окей, начнём редактирование. Введи название запроса:")
         return
 
     if callback_data == "create_approval_request":
@@ -333,7 +393,9 @@ def handle_buttons(bot: Bot, event: Any) -> None:
             "group_name": "",
             "requester_id": user_id,
             "expiry": None,
-            "image": None 
+            "image": None,
+            "stage": "name",
+            "vote_finalied": False
         }
         bot.send_text(chat_id=user_id, text = "Как назовём запрос на апрув?")
         return
@@ -387,13 +449,13 @@ def handle_buttons(bot: Bot, event: Any) -> None:
     
     if callback_data.startswith("choose_group_"):
         group_id, group_name = decode_from_callback(callback_data)
-
         if user_id in current_request:
             request_id = current_request[user_id]
             if user_id in pending_requests and request_id in pending_requests[user_id]:
-                pending_requests[user_id][request_id]["group"] = group_id
-                pending_requests[user_id][request_id]["group_name"] = group_name
-
+                req = pending_requests[user_id][request_id]
+                req["group"] = group_id
+                req["group_name"] = group_name
+                req["stage"] = "expiry"
                 bot.send_text(
                     chat_id = user_id, 
                     text = "Вводи время окончания голосования в одном из следующих форматов:\n"
@@ -402,50 +464,70 @@ def handle_buttons(bot: Bot, event: Any) -> None:
                         "🔹 DD.MM HH:MM – указанная дата и время\n"
                         "🔹 DD.MM.YYYY HH:MM – полная дата и время")
         return
+
     
     if callback_data.startswith("approve_"):
         request_id = callback_data.split("_", 1)[1]
+        
+        # Проверяем, был ли уже завершён запрос
         if request_id in approval_votes and user_id in approval_votes[request_id]:
-            bot.send_text(chat_id = event.from_chat, text = "Вы уже проголосовали.")
+            bot.send_text(chat_id=event.from_chat, text="Твой голос уже засчитан")
             return
+
         approval_votes.setdefault(request_id, {})[user_id] = "принят"
-        bot.send_text(chat_id = event.from_chat, text = "Запрос одобрен")
+        bot.send_text(chat_id=event.from_chat, text="Запрос одобрен")
+
+        # Получаем данные запроса
         found_request = False
         for requester, req_dict in pending_requests.items():
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
                 group_name = req_dict[request_id].get("group_name")
+                
+                # Проверяем, завершено ли голосование
+                #if not req_dict[request_id].get("vote_finalized", False):
+                #    finalize_vote(user_id, request_id, req_dict[request_id].get("group"))
                 bot.send_text(
                     chat_id=requester_id, 
-                    text = f"Пользователь {user_id} из группы \"{group_name}\"\
-                        одобрил твой запрос \"{request_name}\"")
+                    text=f"Пользователь {user_id} из группы \"{group_name}\" одобрил твой запрос \"{request_name}\""
+                )
                 found_request = True
                 return
+
         if not found_request:
-            logging.error(f"Запрос с request_id {request_id} не найден.")
+            logging.error(f"Запрос с request_id {request_id} не найден")
         return
-    
+
     if callback_data.startswith("reject_"):
         request_id = callback_data.split("_", 1)[1]
+        
+        # Проверяем, был ли уже завершён запрос
         if request_id in approval_votes and user_id in approval_votes[request_id]:
             bot.send_text(chat_id=event.from_chat, text="Твой голос уже засчитан")
             return
+
         approval_votes.setdefault(request_id, {})[user_id] = "отклонён"
         bot.send_text(chat_id=event.from_chat, text="Запрос отклонён")
+
+        # Получаем данные запроса
         found_request = False
         for requester, req_dict in pending_requests.items():
             if request_id in req_dict:
                 requester_id = req_dict[request_id].get("requester_id")
                 request_name = req_dict[request_id].get("name", "Без названия")
                 group_name = req_dict[request_id].get("group_name", "Без названия")
+                
+                # Проверяем, завершено ли голосование
+                #if not req_dict[request_id].get("vote_finalized", False):
+                #    finalize_vote(user_id, request_id, req_dict[request_id].get("group"))
                 bot.send_text(
                     chat_id=requester_id, 
-                    text = f"Пользователь {user_id} из группы \"{group_name}\"\
-                    отклонил твой запрос \"{request_name}\""
+                    text=f"Пользователь {user_id} из группы \"{group_name}\" отклонил твой запрос \"{request_name}\""
                 )
                 found_request = True
                 return
+
         if not found_request:
             logging.error(f"Запрос с request_id {request_id} не найден")
         return
@@ -456,66 +538,70 @@ def handle_message(bot: Bot, event: Any) -> None:
     user_id = event.data.get("from", {}).get("userId", "")
     chat_id = event.from_chat
     chat_type = event.data.get("chat", {}).get("type", "")
-    is_private_chat = (chat_type == "private")
+    is_private = (chat_type == "private")
 
-    if is_private_chat and user_id in pending_requests and pending_requests[user_id]:
-        request_id = list(pending_requests[user_id].keys())[-1]
-        req_data = pending_requests[user_id][request_id]
+    if not is_private or user_id not in pending_requests or not pending_requests[user_id]:
+        show_main_menu(bot, chat_id, is_private)
+        return
 
-        # Шаг 1: Ввод названия
-        if req_data["name"] == "":
-            pending_requests[user_id][request_id]["name"] = event.data.get("text", "").strip()
-            bot.send_text(chat_id=user_id, text="А как опишем апрув?")
-            return
+    request_id = current_request.get(user_id)
+    if request_id == None:
+        show_main_menu(bot, chat_id, is_private)
+        return
+    req = pending_requests[user_id][request_id]
+    text = event.data.get("text", "").strip()
+    parts = event.data.get("parts", [])
 
-        # Шаг 2: Ввод описания
-        elif req_data["description"] == "":
-            pending_requests[user_id][request_id]["description"] = event.data.get("text", "").strip()
-            bot.send_text(
-                chat_id=user_id, 
-                text="Хочешь прикрепить изображение к запросу? Отправь файл сейчас или нажми кнопку ниже, если без изображения.",
-                inline_keyboard_markup=[[
-                    {"text": "Продолжить без изображения", "callbackData": "no_image"}
-                ]])
-            return
+    stage = req.get("stage", "name")
+    if stage == "done" or req == None:
+        show_main_menu(bot, chat_id, is_private)
+        return
 
-        # 🔥 Шаг 3: Ожидание изображения или «нет»
-        elif req_data["image"] is None:
-            parts = event.data.get("parts", [])
+    if stage == "name":
+        req["name"] = text
+        req["stage"] = "description"
+        bot.send_text(chat_id=user_id, text="А как опишем апрув?")
+        return
 
-            # Если пользователь прислал изображение
-            for part in parts:
-                if part.get("type") == "file":
-                    payload = part.get("payload", {})
-                    file_id = payload.get("fileId")
-                    if file_id:
-                        pending_requests[user_id][request_id]["image"] = file_id
-                        bot.send_text(chat_id=user_id, text="Изображение прикреплено ✅")
-                        show_available_groups(bot, user_id)
-                        return
+    elif stage == "description":
+        req["description"] = text
+        req["stage"] = "image"
+        bot.send_text(
+            chat_id=user_id,
+            text="Хочешь прикрепить изображение? Отправь файл или нажми кнопку ниже.",
+            inline_keyboard_markup=[[{"text": "Продолжить без изображения", "callbackData": "no_image"}]]
+        )
+        return
 
-            # Иначе повторно спрашиваемы
-            bot.send_text(chat_id=user_id, text="Прикрепи изображение или нажми кнопку \"Пропустить\"")
-            return
+    elif stage == "image":
+        # Пользователь отправил файл
+        for part in parts:
+            if part.get("type") == "file":
+                file_id = part.get("payload", {}).get("fileId")
+                if file_id:
+                    req["image"] = file_id
+                    req["stage"] = "group"
+                    bot.send_text(chat_id=user_id, text="Изображение прикреплено ✅")
+                    show_preview_request(bot, user_id)
+                    return
 
-        # Шаг 4: Ввод времени
-        elif req_data["expiry"] is None:
-            expiry_time = parse_expiry_time(event.data.get("text", ""))
-            if expiry_time:
-                pending_requests[user_id][request_id]["expiry"] = expiry_time.strftime("%Y-%m-%d %H:%M")
-                threading.Thread(target=start_vote_timer, args=(
-                    user_id,
-                    request_id,
-                    expiry_time.timestamp(),
-                    pending_requests[user_id][request_id]["group"]
-                )).start()
-                send_approval_request(bot, user_id, pending_requests[user_id][request_id]["group"], request_id)
-            else:
-                bot.send_text(chat_id=user_id, text="Неверный формат времени. Попробуй снова!")
-            return
+        # Если файл не отправлен — игнорируем
+        bot.send_text(chat_id=user_id, text="Прикрепи изображение или нажми \"Продолжить без изображения\"")
+        return
 
-    # Если не создаётся запрос — показываем главное меню
-    show_main_menu(bot, chat_id, is_private_chat)
+    elif stage == "expiry":
+        expiry = parse_expiry_time(text)
+        if expiry:
+            req["expiry"] = expiry.strftime("%Y-%m-%d %H:%M")
+            req["stage"] = "done"
+            threading.Thread(target=start_vote_timer, args=(
+                user_id, request_id, expiry.timestamp(), req["group"]
+            )).start()
+            send_approval_request(bot, user_id, req["group"], request_id)
+        else:
+            bot.send_text(chat_id=user_id, text="Неверный формат времени. Попробуй снова!")
+        return
+
 
 def update_members(bot: Bot, chat_id: str) -> None:
     try:
