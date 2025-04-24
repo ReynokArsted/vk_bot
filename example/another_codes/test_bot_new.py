@@ -2,7 +2,7 @@ import pytest
 from bot.bot import Bot
 from threading import Thread
 
-import server
+import example.another.server as server
 
 NAME = ""
 VERSION = "0.0.0"
