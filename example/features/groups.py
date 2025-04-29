@@ -1,7 +1,8 @@
 from bot.bot import Bot
 from example.logger import logging
 from typing import Any
-from example.storage import chat_members
+from example.storage.database import SessionLocal
+from example.storage.models import Group, GroupMember
 
 def handle_member_added(bot: Bot, event: Any) -> None:
     """
@@ -27,19 +28,35 @@ def handle_bot_added_to_group(bot: Bot, event: Any) -> None:
 def update_members(bot: Bot, chat_id: str) -> None:
     try:
         response = bot.get_chat_members(chat_id).json()
-        logging.info(f"Ответ от API (get_chat_members): {response}")
         members = response.get("members", [])
-        member_ids = [member.get("userId", "Неизвестно") for member in members]
+        member_ids = [member.get("userId") for member in members if member.get("userId")]
+
         chat_info = bot.get_chat_info(chat_id).json()
         group_name = chat_info.get("title", "Неизвестно")
-        chat_members[chat_id] = {
-            "groupId": chat_id,
-            "groupName": group_name,
-            "members": member_ids
-        }
-        logging.info(f"Обновлённый список участников для {chat_id}: {chat_members[chat_id]['members']}")
-        bot.send_text(chat_id = chat_id, text = f"Список участников обновлён: {len(member_ids)} человек.")
+
+        with SessionLocal() as session:
+            # Обновляем или создаём группу
+            group = session.query(Group).filter_by(id=chat_id).first()
+            if not group:
+                group = Group(id=chat_id, name=group_name)
+                session.add(group)
+            else:
+                group.name = group_name
+
+            # Удаляем старых участников
+            session.query(GroupMember).filter_by(group_id=chat_id).delete()
+
+            # Добавляем новых участников, сохраняя их имена
+            for member in members:
+                user_id = member.get("userId")
+                user_name = member.get("firstName", "") + " " + member.get("lastName", "")
+                if user_id:
+                    session.add(GroupMember(group_id=chat_id, user_id=user_id, user_name=user_name.strip()))
+
+            session.commit()
+
+        logging.info(f"Обновлённый список участников для {chat_id}: {member_ids}")
+        bot.send_text(chat_id=chat_id, text=f"Список участников обновлён: {len(member_ids)} человек.")
     except Exception as e:
         logging.error(f"Ошибка при обновлении списка участников: {e}")
-        bot.send_text(chat_id = chat_id, text = "Ошибка при обновлении списка участников.")
-
+        bot.send_text(chat_id=chat_id, text="Ошибка при обновлении списка участников.")
