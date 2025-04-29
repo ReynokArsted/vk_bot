@@ -2,3 +2,5 @@ from bot.bot import Bot
 
 TOKEN = "001.3014776720.0345725419:1011867925"
 bot = Bot(TOKEN)
+
+BOT_ID = "1011867925"

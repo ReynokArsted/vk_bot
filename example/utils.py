@@ -3,6 +3,13 @@ from example.logger import logging
 import json
 import urllib.parse
 import datetime
+import os
+from dotenv import load_dotenv
+
+def load_env():
+    load_dotenv()
+    if 'DATABASE_URL' not in os.environ:
+        raise RuntimeError("Переменная окружения DATABASE_URL не задана")
 
 # Функции для кодировки названия групп и збежания ошибок в формата callback_data
 def encode_for_callback(group_id: str, group_name: str) -> str:
