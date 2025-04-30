@@ -6,14 +6,14 @@ from example.storage.models import Group, GroupMember
 
 def handle_member_added(bot: Bot, event: Any) -> None:
     """
-    Обработка события добавления пользователя в группу.
+    Обработка события добавления пользователя в группу
     """
     group_id = event.data.get("chat").get("chatId")
     update_members(bot, group_id)  # Обновляем список участников для этой группы
 
 def handle_member_removed(bot: Bot, event: Any) -> None:
     """
-    Обработка события удаления пользователя из группы.
+    Обработка события удаления пользователя из группы
     """
     group_id = event.data.get("chat").get("chatId")
     update_members(bot, group_id)  # Обновляем список участников для этой группы
@@ -55,8 +55,7 @@ def update_members(bot: Bot, chat_id: str) -> None:
 
             session.commit()
 
-        logging.info(f"Обновлённый список участников для {chat_id}: {member_ids}")
-        bot.send_text(chat_id=chat_id, text=f"Список участников обновлён: {len(member_ids)} человек.")
+        bot.send_text(chat_id=chat_id, text=f"Список участников обновлён: {len(member_ids)} человек")
     except Exception as e:
         logging.error(f"Ошибка при обновлении списка участников: {e}")
-        bot.send_text(chat_id=chat_id, text="Ошибка при обновлении списка участников.")
+        bot.send_text(chat_id=chat_id, text="Ошибка при обновлении списка участников")
