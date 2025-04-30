@@ -1,9 +1,7 @@
-# example/init_db.py
 from example.storage.database import engine, Base
+import example.storage.models
 
-# (далее – модуль models уже регистрируется через импорт)
-import example.storage.models   # чтобы SQLAlchemy «видел» все описания таблиц
-
+# Создание таблиц в базе данных
 Base.metadata.create_all(bind=engine)
-print("✅ База данных инициализирована")
 
+print("✅ База данных инициализирована")
