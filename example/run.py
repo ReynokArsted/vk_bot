@@ -15,6 +15,7 @@ from example.features.groups import (
     handle_member_removed
 )
 from example.utils import load_env
+from example.features.reminders import start_reminder_loop
 
 load_env()
 
@@ -24,6 +25,7 @@ bot.dispatcher.add_handler(CommandHandler(command = "/update_members", callback 
 bot.dispatcher.add_handler(NewChatMembersHandler(callback=handle_member_added))
 bot.dispatcher.add_handler(LeftChatMembersHandler(callback=handle_member_removed))
 
+start_reminder_loop(bot)  # Запуск цикла напоминаний
 
 logging.info("Бот запущен и ожидает сообщений...")
 bot.start_polling()

@@ -6,9 +6,11 @@ def show_main_menu(bot: Bot, chat_id: str, is_private_chat: bool) -> None:
         text = "Привет! Создадим запрос на апрув?"
         buttons = [
             [{"text": "Создать запрос на апрув", "callbackData": "create_approval_request"}],
-            [{"text": "Посмотреть статус запросов", "callbackData": "to_requests_menu"}]
+            [{"text": "Посмотреть статус запросов", "callbackData": "to_requests_menu"}],
+            [{"text": "Настройки напоминаний", "callbackData": "settings_reminder_frequency"}]  # Новая кнопка
         ]
     else:
         text = "Привет, чат!"
         buttons = [[{"text": "Обновить участников чата", "callbackData": "update_members"}]]
+    
     bot.send_text(chat_id=chat_id, text=text, inline_keyboard_markup=create_inline_keyboard(buttons))

@@ -12,8 +12,7 @@ from example.requests_menu import (
     show_requests_for_group
 )
 from example.features.requests import (
-    show_request_groups, 
-    show_request_details
+    show_request_groups 
 )
 from example.storage.requests import (
     create_draft,
@@ -22,7 +21,9 @@ from example.storage.requests import (
     get_request,
     delete_draft
 )
-from example.storage.votes import add_vote, get_vote
+from example.storage.votes import get_vote, add_user_to_voted_list
+from example.storage.group_members import is_user_in_group
+from example.handlers.remind_handler import handle_set_reminder_frequency, handle_reminder_settings
 
 def handle_buttons(bot, event):
     from example.utils import decode_from_callback
@@ -48,7 +49,7 @@ def handle_buttons(bot, event):
     # Редактировать превью
     if callback_data == "preview_edit" and draft:
         update_draft(draft.id, name=None, description=None, image_file_id=None, group_id=None, group_name=None, expiry=None, stage="name", vote_finalized=False)
-        bot.send_text(chat_id=user_id, text="Окей, начнём редактирование. Введи название запроса:")
+        bot.send_text(chat_id=user_id, text="Начнём редактирование. Введи название запроса:")
         return
 
     # Создать новый запрос
@@ -58,7 +59,7 @@ def handle_buttons(bot, event):
         return
 
     # Навигация меню — отмена черновика
-    if callback_data in {"to_main_menu", "update_members", "to_requests_menu", "show_your_requests", "show_your_votes"}:
+    if callback_data in {"to_main_menu", "update_members", "to_requests_menu", "show_your_requests", "show_your_votes", "settings_reminder_frequency"}:
         delete_draft(user_id)
         if callback_data == "update_members":
             update_members(bot, chat_id)
@@ -70,6 +71,16 @@ def handle_buttons(bot, event):
             show_request_groups(bot, user_id, chat_id)
         elif callback_data == "show_your_votes":
             show_your_votes(bot, user_id, chat_id)
+        elif callback_data == "settings_reminder_frequency":
+            handle_reminder_settings(bot, user_id)
+        elif callback_data == "set_reminder_15":
+            handle_set_reminder_frequency(bot, user_id, 15)
+        elif callback_data == "set_reminder_25":
+            handle_set_reminder_frequency(bot, user_id, 25)
+        elif callback_data == "set_reminder_30":
+            handle_set_reminder_frequency(bot, user_id, 30)
+        elif callback_data == "set_reminder_60":
+            handle_set_reminder_frequency(bot, user_id, 60)
         return
 
     # Выбор группы из списка
@@ -86,41 +97,39 @@ def handle_buttons(bot, event):
         )
         return
 
-    if callback_data.startswith("approve_"):
-        request_id = callback_data.split("_", 1)[1]
-        existing_vote = get_vote(request_id, user_id)
-        if existing_vote:
-            bot.send_text(chat_id=event.from_chat, text="Твой голос уже засчитан")
+    if callback_data.startswith("approve_") or callback_data.startswith("reject_"):
+        action, request_id = callback_data.split("_", 1)
+        req = get_request(request_id)
+        if not req:
+            bot.send_text(chat_id=event.from_chat, text="Запрос не найден")
             return
 
-        add_vote(request_id, user_id, "принят")
-        bot.send_text(chat_id=event.from_chat, text="Запрос одобрен")
-
-        req = get_request(request_id)
-        if req and user_id != req.requester_id:
-            bot.send_text(
-                chat_id=req.requester_id,
-                text=f"Пользователь {user_id} из группы \"{req.group_name}\" одобрил твой запрос \"{req.name}\""
-            )
-        return
-
-    if callback_data.startswith("reject_"):
-        request_id = callback_data.split("_", 1)[1]
-        existing_vote = get_vote(request_id, user_id)
-        if existing_vote:
-            bot.send_text(chat_id=event.from_chat, text="Твой голос уже засчитан")
+        # Проверка, что пользователь в нужной группе
+        if not is_user_in_group(req.group_id, user_id):
+            bot.send_text(chat_id=event.from_chat, text="Ты не состоишь в группе, связанной с этим запросом")
             return
 
-        add_vote(request_id, user_id, "отклонён")
-        bot.send_text(chat_id=event.from_chat, text="Запрос отклонён")
+        # Добавление голоса пользователя
+        vote_type = "approved" if action == "approve" else "rejected"
+        add_user_to_voted_list(request_id, user_id, vote_type)
 
-        req = get_request(request_id)
-        if req and user_id != req.requester_id:
-            bot.send_text(
-                chat_id=req.requester_id,
-                text=f"Пользователь {user_id} из группы \"{req.group_name}\" отклонил твой запрос \"{req.name}\""
-            )
+        # Отправляем ответ
+        if vote_type == "approved":
+            bot.send_text(chat_id=event.from_chat, text=f"Запрос принят")
+            if user_id != req.requester_id:
+                bot.send_text(
+                    chat_id=req.requester_id,
+                    text=f"Пользователь {user_id} из группы \"{req.group_name}\" принял твой запрос \"{req.name}\""
+                )
+        else:
+            bot.send_text(chat_id=event.from_chat, text=f"Запрос отклонён")
+            if user_id != req.requester_id:
+                bot.send_text(
+                    chat_id=req.requester_id,
+                    text=f"Пользователь {user_id} из группы \"{req.group_name}\" отклонил твой запрос \"{req.name}\""
+                )
         return
+
 
     if callback_data.startswith("view_requests_group_"):
         group_id = callback_data.removeprefix("view_requests_group_")

@@ -1,6 +1,6 @@
 import uuid
 from uuid import UUID
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from contextlib import closing
 from example.storage.database import get_db
@@ -218,8 +218,14 @@ def finalize_draft(draft_id: str) -> None:
             image_file_id=draft.image_file_id,
             created_at=draft.created_at,
             vote_finalized=draft.vote_finalized,
-            stage=draft.stage
+            stage=draft.stage,
+            status="in_progress"
         )
         db.add(req)
         db.delete(draft)
         db.commit()
+
+def get_all_active_requests() -> List[Request]:
+    with closing(next(get_db())) as db:
+        return db.query(Request).filter_by(status="in_progress").all()
+

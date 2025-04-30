@@ -74,3 +74,15 @@ class User(Base):
     id = Column(String, primary_key=True, index=True)
     first_name = Column(String)
     last_name = Column(String)
+    reminder_frequency = Column(Integer, default=60)  # Частота напоминаний в минутах, по умолчанию 60 минут
+
+    settings = relationship('UserSettings', back_populates='user', uselist=False)
+
+class UserSettings(Base):
+    __tablename__ = 'user_settings'
+
+    user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    reminder_frequency = Column(Integer, default=60)  # Частота напоминаний в минутах, по умолчанию 60 минут
+
+    user = relationship('User', back_populates='settings')
+

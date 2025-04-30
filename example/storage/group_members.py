@@ -4,6 +4,15 @@ from example.storage.models import GroupMember, User, Group
 from contextlib import closing
 from example.bot_instance import BOT_ID
 
+def is_user_in_group(group_id: str, user_id: str) -> bool:
+    """
+    Проверяет, является ли пользователь членом группы
+    """
+    with closing(next(get_db())) as db:
+        member = db.query(GroupMember).filter_by(group_id=group_id, user_id=user_id).first()
+        return member is not None
+
+
 def set_group_members(group_id: str, members: List[dict]) -> None:
     with closing(next(get_db())) as db:
         db.query(GroupMember).filter_by(group_id=group_id).delete()
