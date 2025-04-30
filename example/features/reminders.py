@@ -9,15 +9,13 @@ def start_reminder_loop(bot):
     def loop():
         while True:
             check_pending_votes(bot)
-            time.sleep(60)  # Каждый 1 минуту проверяем
+            time.sleep(15)  # Каждые 15 минут проверяем
 
     Thread(target=loop, daemon=True).start()
 
 
 def check_pending_votes(bot):
     requests = get_all_active_requests()  # Получаем все запросы со статусом "in_progress"
-    print(f"\n[ReminderLoop] Проверка запросов: найдено {len(requests)} активных запросов\n")
-    
     for req in requests:
         group_id = req.group_id
         members = get_group_members(group_id)

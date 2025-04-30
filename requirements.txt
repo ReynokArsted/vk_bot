@@ -1,10 +1,18 @@
-cached-property == 1.5.2
-enum34 == 1.1.6; python_version < "3.4"
-expiringdict == 1.2.1
-monotonic ==1.6
-python-baseconv == 1.2.2
-requests ==2.31.0
-six ==1.16.0
-gTTS ==2.2.3
-urllib3 ==1.26.18
-click >=8.0.3
+cached-property==1.5.2
+certifi==2025.4.26
+charset-normalizer==3.4.1
+click==8.1.8
+dotenv==0.9.9
+expiringdict==1.2.1
+greenlet==3.2.1
+gTTS==2.2.3
+idna==3.10
+monotonic==1.6
+psycopg2==2.9.10
+python-baseconv==1.2.2
+python-dotenv==1.1.0
+requests==2.31.0
+six==1.16.0
+SQLAlchemy==2.0.40
+typing_extensions==4.13.2
+urllib3==1.26.18

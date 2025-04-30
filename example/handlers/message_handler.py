@@ -1,7 +1,6 @@
 from example.main_menu import show_main_menu
 from example.features.requests import show_preview_request, send_approval_request, start_vote_timer
 from example.utils import parse_expiry_time
-from example.storage.database import get_db
 from example.storage.requests import (
     get_draft,
     update_draft,
