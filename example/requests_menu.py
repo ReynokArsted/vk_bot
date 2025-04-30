@@ -27,7 +27,6 @@ def show_requests_for_group(bot: Bot, user_id: str, group_id: str, chat_id: str)
         bot.send_text(chat_id=chat_id, text=f'В группе "{group_name}" нет активных запросов')
         return
 
-    #buttons.append([{"text": "Назад", "callbackData": f"back_to_group_{group_id}"}])
     buttons.append([{"text": "Назад", "callbackData": "show_your_requests"}])
     bot.send_text(
         chat_id=chat_id,
