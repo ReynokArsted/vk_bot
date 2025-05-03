@@ -73,6 +73,6 @@ def get_user_reminder_frequency(user_id: str) -> int:
     """Получить частоту напоминаний для пользователя (в минутах)."""
     with closing(next(get_db())) as db:
         user_settings = db.query(UserSettings).filter_by(user_id=user_id).first()
-        return user_settings.reminder_frequency if user_settings else 60  # Возвращаем 60 минут по умолчанию, если настройки нет
+        return user_settings.reminder_frequency if user_settings else 15
 
 

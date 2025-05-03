@@ -1,17 +1,15 @@
 from example.utils import create_inline_keyboard, encode_for_callback
 from example.logger import logging
-from example.main_menu import show_main_menu
 from example.storage.requests import (
     get_request, 
     get_draft, 
-    get_requests_by_user,
     finalize_draft,
     update_request_status
 )
 from example.storage.group_members import (
     get_group_members, 
     get_group_name, 
-    get_user_display_name, 
+    format_user_list,
     get_user_groups
 )
 from example.storage.votes import get_votes
@@ -68,15 +66,14 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
 
     votes = {v.user_id: v.vote for v in get_votes(request_id)}
     members = get_group_members(group_id)
-    member_names = {uid: get_user_display_name(uid) for uid in members}
 
     approved_users = [uid for uid, v in votes.items() if v in ("approved", "принят")]
     rejected_users = [uid for uid, v in votes.items() if v in ("rejected", "отклонён")]
     non_voters = [uid for uid in members if uid not in votes]
 
-    approved_names = ", ".join(member_names[uid] for uid in approved_users) or "никто"
-    rejected_names = ", ".join(member_names[uid] for uid in rejected_users) or "никто"
-    non_voter_names = ", ".join(member_names[uid] for uid in non_voters) or "никто"
+    approved_names = format_user_list(approved_users)
+    rejected_names = format_user_list(rejected_users)
+    non_voter_names = format_user_list(non_voters)
 
     approved_count = len(approved_users)
     rejected_count = len(rejected_users)
@@ -91,12 +88,11 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
         result_text = "Итог - 🤷 Голоса разделились и решение не принято"
         update_request_status(request_id, "undecided")  # Ничья (или недостаточно голосов)
 
-
     summary = (
         f"Голосование по запросу \"{req.name}\" в группе \"{get_group_name(group_id)}\" завершено!\n\n"
-        f"✅ За ({approved_count}): {approved_names}\n"
-        f"❌ Против ({rejected_count}): {rejected_names}\n"
-        f"❔ Не голосовали: {non_voter_names}\n\n"
+        f"✅ За ({approved_count}):\n{approved_names}\n\n"
+        f"❌ Против ({rejected_count}):\n{rejected_names}\n\n"
+        f"❔ Не голосовали:\n{non_voter_names}\n\n"
         f"{result_text}"
     )
 
@@ -109,7 +105,6 @@ def finalize_vote(user_id: str, request_id: str, group_id: str) -> None:
 def show_preview_request(bot: Bot, user_id: str) -> None: 
     req = get_draft(user_id)
     if not req:
-        print(f"\n !!! 222 : {req}\n")
         return
 
     text = f"**Предпросмотр запроса**\n\n" \

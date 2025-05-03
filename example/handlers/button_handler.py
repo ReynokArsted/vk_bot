@@ -58,8 +58,9 @@ def handle_buttons(bot, event):
         bot.send_text(chat_id=user_id, text="Как назовём запрос на апрув?")
         return
 
-    # Навигация меню — отмена черновика
-    if callback_data in {"to_main_menu", "update_members", "to_requests_menu", "show_your_requests", "show_your_votes", "settings_reminder_frequency"}:
+    if callback_data in {"to_main_menu", "update_members", "to_requests_menu", 
+                        "show_your_requests", "show_your_votes", "settings_reminder_frequency",
+                        "set_reminder_15", "set_reminder_25", "set_reminder_30", "set_reminder_60"}:
         delete_draft(user_id)
         if callback_data == "update_members":
             update_members(bot, chat_id)
@@ -148,7 +149,16 @@ def handle_buttons(bot, event):
             text += f"Описание: {req.description}\n\n"
         text += f"👤 Создатель: {req.requester_id}\n"
         text += f"👥 Группа: {req.group_name or get_group_name(req.group_id)}\n"
-        text += f"🗳 Статус: {req.status}"
+
+        print(f"[DRBUG] {req.status}")
+        if req.status == "аpproved":
+            text += f"🗳 Статус: принят"
+        elif req.status == "rejected":
+            text += f"🗳 Статус: отклонён"
+        elif req.status == "undecided":
+            text += f"🗳 Статус: не решено"
+        elif req.status == "in_progress":
+            text += f"🗳 Статус: в процессе голосования"
 
         buttons = [[{"text": "Назад", "callbackData": f"back_to_group_{req.group_id}"}]]
 
