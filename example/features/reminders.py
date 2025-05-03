@@ -9,7 +9,7 @@ def start_reminder_loop(bot):
     def loop():
         while True:
             check_pending_votes(bot)
-            time.sleep(15)  # Каждые 15 минут проверяем
+            time.sleep(15 * 60)  # Каждые 15 минут проверяем (изменено на 15 минут)
 
     Thread(target=loop, daemon=True).start()
 
@@ -32,6 +32,9 @@ def check_pending_votes(bot):
                 # Получаем частоту напоминаний для этого пользователя
                 reminder_frequency = get_user_reminder_frequency(user_id)
 
+                # Засыпаем на время, равное частоте напоминаний пользователя (в секундах)
+                time.sleep(reminder_frequency * 60)  # Частота напоминаний в минутах
+
                 # Отправляем напоминание
                 bot.send_text(
                     chat_id=user_id,
@@ -43,9 +46,6 @@ def check_pending_votes(bot):
                         ]
                     ])
                 )
-
-                # Засыпаем на время, равное частоте напоминаний пользователя (в секундах)
-                time.sleep(reminder_frequency * 60)  # Частота напоминаний в минутах
 
             except Exception as e:
                 print(f"Не удалось отправить напоминание пользователю {user_id}: {e}")

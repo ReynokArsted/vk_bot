@@ -40,7 +40,6 @@ def get_user_groups(user_id: str) -> List[str]:
         rows = db.query(GroupMember).filter_by(user_id=user_id).all()
         return [gm.group_id for gm in rows]
 
-def get_user_display_name(user_id: str) -> str:
-    with closing(next(get_db())) as db:
-        user = db.query(User).filter(User.id == user_id).first()
-        return user.display_name if user else f"\n{user_id}"
+def format_user_list(users: list[str]) -> str:
+    """Форматирует список пользователей: имена через запятую, каждый с новой строки"""
+    return ",\n".join(users) if users else "никто"

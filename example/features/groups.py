@@ -3,6 +3,7 @@ from example.logger import logging
 from typing import Any
 from example.storage.database import SessionLocal
 from example.storage.models import Group, GroupMember
+from example.bot_instance import BOT_ID
 
 def handle_member_added(bot: Bot, event: Any) -> None:
     """
@@ -29,7 +30,10 @@ def update_members(bot: Bot, chat_id: str) -> None:
     try:
         response = bot.get_chat_members(chat_id).json()
         members = response.get("members", [])
-        member_ids = [member.get("userId") for member in members if member.get("userId")]
+        human_members = [
+            m for m in members if m.get("userId") and m.get("userId") != BOT_ID
+        ]
+        member_ids = [m["userId"] for m in human_members]
 
         chat_info = bot.get_chat_info(chat_id).json()
         group_name = chat_info.get("title", "Неизвестно")
